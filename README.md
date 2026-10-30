@@ -54,3 +54,23 @@ You ──prompt──▶ Copilot Agent Mode
 ---
 
 © 2026 • [MIT License](LICENSE)
+
+## Weather Tracker CLI
+
+The CLI stores live Open-Meteo readings in `weather.db`.
+
+```sh
+node src/cli.js add "London"
+node src/cli.js add "Tokyo"
+node src/cli.js list
+node src/cli.js list --limit 5
+node src/cli.js stats "London"
+```
+
+Equivalent npm scripts are available:
+
+```sh
+npm run add -- "London"
+npm run list -- --limit 5
+npm run stats -- "London"
+```
