@@ -30,6 +30,39 @@ export function getRecentWeatherLogs(limit) {
   `).all(limit);
 }
 
+// Return latest and aggregate temperature data for each logged city.
+export function getWeatherSummary() {
+  return database.prepare(`
+    SELECT grouped.city,
+           (
+             SELECT country
+             FROM weather_logs AS latest
+             WHERE latest.city = grouped.city COLLATE NOCASE
+             ORDER BY latest.created_at DESC, latest.id DESC
+             LIMIT 1
+           ) AS country,
+           (
+             SELECT temperature_c
+             FROM weather_logs AS latest
+             WHERE latest.city = grouped.city COLLATE NOCASE
+             ORDER BY latest.created_at DESC, latest.id DESC
+             LIMIT 1
+           ) AS latest_temperature_c,
+           AVG(grouped.temperature_c) AS average_temperature_c,
+           COUNT(*) AS log_count,
+           (
+             SELECT created_at
+             FROM weather_logs AS latest
+             WHERE latest.city = grouped.city COLLATE NOCASE
+             ORDER BY latest.created_at DESC, latest.id DESC
+             LIMIT 1
+           ) AS latest_at
+    FROM weather_logs AS grouped
+    GROUP BY grouped.city COLLATE NOCASE
+    ORDER BY grouped.city COLLATE NOCASE
+  `).all();
+}
+
 // Aggregate temperature readings for a city without interpolating user input.
 export function getCityStats(city) {
   return database.prepare(`
