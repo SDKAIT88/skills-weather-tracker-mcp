@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f7fb">
+    <title>Weather Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #17243b;
+        background: #f4f7fb;
+        font-synthesis: none;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; }
+      main { width: min(1120px, calc(100% - 40px)); margin: 48px auto; }
+      header { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 32px; }
+      .eyebrow { color: #4774d1; font-size: 0.75rem; font-weight: 750; letter-spacing: 0.12em; text-transform: uppercase; }
+      h1 { margin: 7px 0 0; font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -0.05em; }
+      .subtitle { margin: 8px 0 0; color: #71809a; }
+      form { display: flex; gap: 10px; }
+      input, button { min-height: 46px; border-radius: 10px; font: inherit; }
+      input { width: min(260px, 42vw); border: 1px solid #dce3ee; background: white; padding: 0 14px; outline: none; }
+      input:focus { border-color: #527fe0; box-shadow: 0 0 0 3px #527fe022; }
+      button { border: 0; background: #3569d4; color: white; padding: 0 18px; font-weight: 700; cursor: pointer; }
+      button:disabled { cursor: wait; opacity: 0.65; }
+      #status { min-height: 22px; margin: -20px 0 22px; color: #61708a; font-size: 0.9rem; }
+      #status.error { color: #b42335; }
+      .section-heading { display: flex; justify-content: space-between; align-items: baseline; margin: 28px 0 14px; }
+      h2 { margin: 0; font-size: 1.15rem; }
+      .section-heading span { color: #8290a7; font-size: 0.82rem; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+      .card, .panel { border: 1px solid #e6ebf2; border-radius: 16px; background: white; box-shadow: 0 5px 20px #1e37600a; }
+      .card { padding: 18px; }
+      .card h3 { margin: 0; font-size: 1rem; }
+      .country { color: #8290a7; font-size: 0.85rem; }
+      .latest { margin: 16px 0 12px; font-size: 2rem; font-weight: 750; letter-spacing: -0.05em; }
+      .metrics { display: flex; justify-content: space-between; color: #71809a; font-size: 0.83rem; }
+      .panel { padding: 18px; }
+      .chart-wrap { height: 310px; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+      th, td { padding: 12px 14px; border-bottom: 1px solid #edf0f5; }
+      th { color: #8290a7; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+      td { font-size: 0.9rem; }
+      tbody tr:last-child td { border-bottom: 0; }
+      .empty { color: #8290a7; padding: 24px 14px; text-align: center; }
+      @media (max-width: 700px) {
+        main { width: min(100% - 28px, 560px); margin: 28px auto; }
+        header { align-items: stretch; flex-direction: column; margin-bottom: 26px; }
+        form { width: 100%; }
+        input { flex: 1; width: auto; min-width: 0; }
+        button { padding: 0 13px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <div class="eyebrow">Local weather log</div>
+          <h1>Weather Tracker</h1>
+          <p class="subtitle">Current conditions and temperature history by city.</p>
+        </div>
+        <form id="city-form">
+          <input id="city-input" name="city" type="text" placeholder="Enter a city" aria-label="City name" required>
+          <button id="submit-button" type="submit">Add / Refresh</button>
+        </form>
+      </header>
+      <p id="status" role="status" aria-live="polite"></p>
+
+      <section aria-labelledby="summary-heading">
+        <div class="section-heading">
+          <h2 id="summary-heading">City summary</h2>
+          <span>Latest reading · average · saved logs</span>
+        </div>
+        <div id="summary-cards" class="cards"></div>
+      </section>
+
+      <section aria-labelledby="chart-heading">
+        <div class="section-heading">
+          <h2 id="chart-heading">Temperature history</h2>
+          <span>Recent readings · °C</span>
+        </div>
+        <div class="panel chart-wrap">
+          <canvas id="temperature-chart" aria-label="Temperature line chart" role="img"></canvas>
+        </div>
+      </section>
+
+      <section aria-labelledby="logs-heading">
+        <div class="section-heading">
+          <h2 id="logs-heading">Recent logs</h2>
+          <span>Latest 50 readings</span>
+        </div>
+        <div class="panel table-wrap">
+          <table>
+            <thead>
+              <tr><th>City</th><th>Country</th><th>Temperature</th><th>Humidity</th><th>Wind</th><th>Condition</th><th>Logged</th></tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script>
+      const statusMessage = document.querySelector('#status');
+      const logsBody = document.querySelector('#logs-body');
+      const summaryCards = document.querySelector('#summary-cards');
+      const form = document.querySelector('#city-form');
+      const cityInput = document.querySelector('#city-input');
+      const submitButton = document.querySelector('#submit-button');
+      let temperatureChart;
+
+      // Format a temperature value for the dashboard.
+      function formatTemperature(value) {
+        return value == null ? '—' : `${Number(value).toFixed(1)} °C`;
+      }
+
+      // Format a saved timestamp for the visitor's locale.
+      function formatDate(value) {
+        return value ? new Date(`${value.replace(' ', 'T')}Z`).toLocaleString() : '—';
+      }
+
+      // Create a text-only table cell to avoid interpreting API data as markup.
+      function addCell(row, value) {
+        const cell = document.createElement('td');
+        cell.textContent = value ?? '—';
+        row.append(cell);
+      }
+
+      // Draw the latest readings in the recent logs table.
+      function renderLogs(logs) {
+        logsBody.replaceChildren();
+        if (logs.length === 0) {
+          const row = document.createElement('tr');
+          const cell = document.createElement('td');
+          cell.className = 'empty';
+          cell.colSpan = 7;
+          cell.textContent = 'No readings yet. Add a city to get started.';
+          row.append(cell);
+          logsBody.append(row);
+          return;
+        }
+
+        for (const log of logs) {
+          const row = document.createElement('tr');
+          addCell(row, log.city);
+          addCell(row, log.country);
+          addCell(row, formatTemperature(log.temperature_c));
+          addCell(row, log.humidity == null ? '—' : `${log.humidity}%`);
+          addCell(row, log.wind_kmh == null ? '—' : `${Number(log.wind_kmh).toFixed(1)} km/h`);
+          addCell(row, log.condition);
+          addCell(row, formatDate(log.created_at));
+          logsBody.append(row);
+        }
+      }
+
+      // Render per-city latest, average, and reading-count cards.
+      function renderSummary(summary) {
+        summaryCards.replaceChildren();
+        if (summary.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'card country';
+          empty.textContent = 'No cities tracked yet.';
+          summaryCards.append(empty);
+          return;
+        }
+
+        for (const city of summary) {
+          const card = document.createElement('article');
+          card.className = 'card';
+          const name = document.createElement('h3');
+          name.textContent = city.city;
+          const country = document.createElement('div');
+          country.className = 'country';
+          country.textContent = city.country ?? '';
+          const latest = document.createElement('div');
+          latest.className = 'latest';
+          latest.textContent = formatTemperature(city.latest_temperature_c);
+          const metrics = document.createElement('div');
+          metrics.className = 'metrics';
+          const average = document.createElement('span');
+          average.textContent = `Avg ${formatTemperature(city.average_temperature_c)}`;
+          const count = document.createElement('span');
+          count.textContent = `${city.log_count} logs`;
+          metrics.append(average, count);
+          card.append(name, country, latest, metrics);
+          summaryCards.append(card);
+        }
+      }
+
+      // Plot the fetched log history as separate city lines.
+      function renderChart(logs) {
+        const chronological = [...logs].reverse();
+        const labels = chronological.map((log) => formatDate(log.created_at));
+        const cities = [...new Set(chronological.map((log) => log.city))];
+        const colors = ['#3569d4', '#e07849', '#46a58c', '#9c6ed0', '#d2a12d', '#dd6480'];
+        const datasets = cities.map((city, index) => ({
+          label: city,
+          data: chronological.map((log) => log.city === city ? log.temperature_c : null),
+          borderColor: colors[index % colors.length],
+          backgroundColor: colors[index % colors.length],
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.25,
+          spanGaps: true
+        }));
+
+        if (temperatureChart) temperatureChart.destroy();
+        temperatureChart = new Chart(document.querySelector('#temperature-chart'), {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+              y: { title: { display: true, text: 'Temperature (°C)' } },
+              x: { ticks: { maxRotation: 0, maxTicksLimit: 8 } }
+            }
+          }
+        });
+      }
+
+      // Load all dashboard data and surface request failures.
+      async function loadDashboard() {
+        const [logsResponse, summaryResponse] = await Promise.all([
+          fetch('/api/logs'),
+          fetch('/api/summary')
+        ]);
+        if (!logsResponse.ok || !summaryResponse.ok) {
+          throw new Error('Could not load dashboard data.');
+        }
+
+        const [logs, summary] = await Promise.all([logsResponse.json(), summaryResponse.json()]);
+        renderLogs(logs);
+        renderSummary(summary);
+        renderChart(logs);
+      }
+
+      // Fetch and save a city reading, then reload the dashboard.
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const city = cityInput.value.trim();
+        if (!city) return;
+
+        submitButton.disabled = true;
+        statusMessage.className = '';
+        statusMessage.textContent = `Fetching weather for ${city}…`;
+        try {
+          const response = await fetch(`/api/refresh?city=${encodeURIComponent(city)}`, { method: 'POST' });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error ?? 'Could not refresh this city.');
+          cityInput.value = '';
+          await loadDashboard();
+          statusMessage.textContent = `Saved the latest reading for ${result.city}.`;
+        } catch (error) {
+          statusMessage.className = 'error';
+          statusMessage.textContent = error.message;
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      // Show initial API or rendering errors in the dashboard status area.
+      loadDashboard().catch((error) => {
+        statusMessage.className = 'error';
+        statusMessage.textContent = error.message;
+      });
+    </script>
+  </body>
+</html>
